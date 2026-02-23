@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:cute_game/game/game_over.dart';
 import 'package:flame/camera.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -6,11 +7,11 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'player.dart';
 import 'obstacle.dart';
-import 'dart:ui';
 
 class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   late Player player;
   late TextComponent scoreText;
+  late TextComponent highScoreText;
 
   final Random random = Random();
 
@@ -19,42 +20,70 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
   double survivalTime = 0;
   int score = 0;
+  int highScore = 0;
 
   bool isGameOver = false;
 
+  TextComponent? gameOverText;
+
   @override
   Future<void> onLoad() async {
-    camera.viewport = FixedResolutionViewport(resolution: Vector2(400, 800));
+    camera.viewport = MaxViewport();
 
     player = Player(onGameOver: gameOver);
 
     add(player);
 
     scoreText = TextComponent(
-      text: 'Score: 0',
-      position: Vector2(10, 10),
+      text: '0s',
+      position: Vector2(size.x / 2, size.y * 0.15),
+      anchor: Anchor.center,
       priority: 100,
-      anchor: Anchor.topLeft,
       textRenderer: TextPaint(
-        style: const TextStyle(color: Colors.black, fontSize: 24),
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 32,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
 
     add(scoreText);
 
-    camera.follow(player);
+    highScoreText = TextComponent(
+      text: 'Best: 0s',
+      position: Vector2(size.x / 2, size.y * 0.22),
+      anchor: Anchor.center,
+      priority: 100,
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 20,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+
+    add(highScoreText);
   }
 
   @override
   void update(double dt) {
-    if (isGameOver) return;
-
     super.update(dt);
+    if (isGameOver) return;
 
     // ⏱ Tiempo sobrevivido
     survivalTime += dt;
     score = survivalTime.floor();
     scoreText.text = '${score}s';
+
+    scoreText.textRenderer = TextPaint(
+      style: TextStyle(
+        color: survivalTime > 40 ? Colors.white : Colors.black,
+        fontSize: 32,
+        fontWeight: FontWeight.bold,
+      ),
+    );
 
     spawnTimer += dt;
 
@@ -66,10 +95,7 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
       spawnTimer = 0;
     }
 
-    // 💀 Muere si cae abajo
-    final visibleBottom = camera.visibleWorldRect.bottom;
-
-    if (player.position.y > visibleBottom + 100) {
+    if (player.position.y > size.y + 50) {
       gameOver();
     }
   }
@@ -126,45 +152,30 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   }
 
   void spawnObstacle() {
-    final visibleTop = camera.visibleWorldRect.top;
-    final visibleLeft = camera.visibleWorldRect.left;
-    final visibleRight = camera.visibleWorldRect.right;
+    final worldWidth = size.x;
+    final visibleRect = camera.visibleWorldRect;
 
-    final obstacleCount = 2 + random.nextInt(3); // 2 a 4 por spawn
+    final visibleTop = visibleRect.top;
+    final visibleBottom = visibleRect.bottom;
+
+    final obstacleCount = 2 + random.nextInt(3);
 
     for (int i = 0; i < obstacleCount; i++) {
       final type = random.nextInt(3);
 
+      final randomY =
+          visibleTop + random.nextDouble() * (visibleBottom - visibleTop);
+
       if (type == 0) {
-        // Desde izquierda
-        add(
-          Obstacle(
-            position: Vector2(
-              visibleLeft - 50,
-              visibleTop - random.nextInt(400),
-            ),
-            moveLeft: false,
-          ),
-        );
+        add(Obstacle(position: Vector2(-60, randomY), moveLeft: false));
       } else if (type == 1) {
-        // Desde derecha
         add(
-          Obstacle(
-            position: Vector2(
-              visibleRight + 50,
-              visibleTop - random.nextInt(400),
-            ),
-            moveLeft: true,
-          ),
+          Obstacle(position: Vector2(worldWidth + 60, randomY), moveLeft: true),
         );
       } else {
-        // Desde arriba cayendo
         add(
           Obstacle(
-            position: Vector2(
-              visibleLeft + random.nextDouble() * (visibleRight - visibleLeft),
-              visibleTop - 50,
-            ),
+            position: Vector2(random.nextDouble() * worldWidth, visibleTop),
             moveLeft: false,
             falling: true,
           ),
@@ -175,36 +186,61 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (isGameOver) return;
+    if (isGameOver) {
+      restartGame();
+      return;
+    }
 
     final tapX = event.canvasPosition.x;
     final centerX = size.x / 2;
-
-    double direction = tapX < centerX ? -1 : 1;
-
-    player.jump(direction);
+    player.jump(tapX < centerX ? -1 : 1);
   }
 
   void gameOver() {
     if (isGameOver) return;
-
     isGameOver = true;
-    pauseEngine();
 
-    add(
-      TextComponent(
-        text: 'GAME OVER',
-        position: player.position.clone(),
-        anchor: Anchor.center,
-        priority: 200,
-        textRenderer: TextPaint(
-          style: const TextStyle(
-            color: Colors.red,
-            fontSize: 40,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+    if (score > highScore) {
+      highScore = score;
+      highScoreText.text = 'Best: ${highScore}s';
+    }
+
+    camera.viewport.add(GameOverOverlay(size));
+
+    gameOver();
+  }
+
+  void restartGame() {
+    survivalTime = 0;
+    score = 0;
+    spawnTimer = 0;
+    spawnInterval = 1.5;
+    isGameOver = false;
+
+    scoreText.text = '0s';
+    scoreText.textRenderer = TextPaint(
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 32,
+        fontWeight: FontWeight.bold,
       ),
     );
+
+    // Eliminar obstáculos
+    children.whereType<Obstacle>().toList().forEach(
+      (o) => o.removeFromParent(),
+    );
+
+    // Eliminar overlay y texto del viewport
+    camera.viewport.children.whereType<GameOverOverlay>().toList().forEach(
+      (o) => o.removeFromParent(),
+    );
+
+    gameOverText?.removeFromParent();
+    gameOverText = null;
+
+    // Resetear player
+    player.position = Vector2(size.x / 2, size.y / 2);
+    player.velocity = Vector2.zero();
   }
 }

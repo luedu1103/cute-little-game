@@ -27,7 +27,7 @@ class Player extends PositionComponent with CollisionCallbacks {
 
     velocity.y += gravity * dt;
     position += velocity * dt;
-    position.x = position.x.clamp(16, 384);
+    position.x = position.x.clamp(size.x / 2, findGame()!.size.x - size.x / 2);
   }
 
   void jump(double directionX) {
