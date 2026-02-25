@@ -31,6 +31,12 @@ class Player extends PositionComponent with CollisionCallbacks {
     velocity.y += gravity * dt;
     position += velocity * dt;
     position.x = position.x.clamp(size.x / 2, findGame()!.size.x - size.x / 2);
+
+    // Prevent going above top
+    if (position.y < 0) {
+      position.y = 0;
+      velocity.y = 0;
+    }
   }
 
   void jump(double directionX) {
