@@ -1,4 +1,4 @@
-package com.example.cute_game
+package com.lazy_wolves.cute_game
 
 import io.flutter.embedding.android.FlutterActivity
 
