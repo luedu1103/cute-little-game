@@ -8,6 +8,8 @@ class Player extends PositionComponent with CollisionCallbacks {
   final double gravity = 900;
   final double jumpForce = -450;
 
+  bool isVisible = true;
+
   late Function onGameOver;
 
   Player({required this.onGameOver}) {
@@ -24,6 +26,7 @@ class Player extends PositionComponent with CollisionCallbacks {
   @override
   void update(double dt) {
     super.update(dt);
+    if (!isVisible) return;
 
     velocity.y += gravity * dt;
     position += velocity * dt;
@@ -37,6 +40,7 @@ class Player extends PositionComponent with CollisionCallbacks {
 
   @override
   void render(Canvas canvas) {
+    if (!isVisible) return;
     super.render(canvas);
 
     // Body
@@ -45,13 +49,13 @@ class Player extends PositionComponent with CollisionCallbacks {
 
     // Eyes
     final eyePaint = Paint()..color = Colors.white;
-    canvas.drawCircle(Offset(10, 12), 4, eyePaint);
-    canvas.drawCircle(Offset(22, 12), 4, eyePaint);
+    canvas.drawCircle(const Offset(10, 12), 4, eyePaint);
+    canvas.drawCircle(const Offset(22, 12), 4, eyePaint);
   }
 
   @override
   void onCollision(Set<Vector2> intersectionPoints, PositionComponent other) {
-    if (other is Obstacle) {
+    if (other is Obstacle && isVisible) {
       onGameOver();
     }
     super.onCollision(intersectionPoints, other);

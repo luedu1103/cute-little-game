@@ -1,12 +1,16 @@
 import 'dart:math';
-import 'package:cute_game/game/game_over.dart';
+import 'package:cute_game/game/components/star.dart';
+import 'package:flutter/material.dart';
 import 'package:flame/camera.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
-import 'package:flutter/material.dart';
-import 'player.dart';
-import 'obstacle.dart';
+import 'package:cute_game/game/ui/game_over.dart';
+import 'package:cute_game/game/ui/rainbaw_explosion.dart';
+import 'components/player.dart';
+import 'components/obstacle.dart';
+
+enum GameState { playing, dying, gameOver }
 
 class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   late Player player;
@@ -22,30 +26,45 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   int score = 0;
   int highScore = 0;
 
-  bool isGameOver = false;
+  GameState _state = GameState.playing;
 
-  TextComponent? gameOverText;
+  late final Paint _backgroundPaint;
+  late final Paint _starPaint;
+
+  late final List<Star> _stars;
+
+  late final TextPaint _blackScorePaint;
+  late final TextPaint _whiteScorePaint;
 
   @override
   Future<void> onLoad() async {
     camera.viewport = MaxViewport();
 
     player = Player(onGameOver: gameOver);
-
     add(player);
+
+    _blackScorePaint = TextPaint(
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 32,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+
+    _whiteScorePaint = TextPaint(
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 32,
+        fontWeight: FontWeight.bold,
+      ),
+    );
 
     scoreText = TextComponent(
       text: '0s',
       position: Vector2(size.x / 2, size.y * 0.15),
       anchor: Anchor.center,
       priority: 100,
-      textRenderer: TextPaint(
-        style: const TextStyle(
-          color: Colors.black,
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+      textRenderer: _blackScorePaint,
     );
 
     add(scoreText);
@@ -65,29 +84,54 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     );
 
     add(highScoreText);
+
+    // ---- Fondo optimizado ----
+    _backgroundPaint = Paint();
+
+    _starPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    _stars = [];
+
+    for (int i = 0; i < 60; i++) {
+      _stars.add(
+        Star(
+          x: random.nextDouble() * size.x,
+          y: random.nextDouble() * size.y,
+          speed: 20 + random.nextDouble() * 60,
+          size: 1 + random.nextDouble() * 2,
+        ),
+      );
+    }
   }
 
   @override
   void update(double dt) {
     super.update(dt);
-    if (isGameOver) return;
+    if (_state == GameState.gameOver) return;
 
-    // ⏱ Tiempo sobrevivido
     survivalTime += dt;
     score = survivalTime.floor();
     scoreText.text = '${score}s';
 
-    scoreText.textRenderer = TextPaint(
-      style: TextStyle(
-        color: survivalTime > 40 ? Colors.white : Colors.black,
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-      ),
-    );
+    // Cambiar renderer sin recrearlo
+    scoreText.textRenderer = survivalTime > 40
+        ? _whiteScorePaint
+        : _blackScorePaint;
+
+    // Movimiento estrellas
+    for (final star in _stars) {
+      star.y += star.speed * dt;
+
+      if (star.y > size.y) {
+        star.y = 0;
+        star.x = random.nextDouble() * size.x;
+      }
+    }
 
     spawnTimer += dt;
 
-    // dificultad progresiva
     spawnInterval = (1.5 - survivalTime * 0.01).clamp(0.5, 1.5);
 
     if (spawnTimer > spawnInterval) {
@@ -125,38 +169,33 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
     final rect = Rect.fromLTWH(0, 0, gameSize.x, gameSize.y);
 
-    final gradient = LinearGradient(
+    _backgroundPaint.shader = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [topColor, bottomColor],
-    );
+    ).createShader(rect);
 
-    final paint = Paint()..shader = gradient.createShader(rect);
+    canvas.drawRect(rect, _backgroundPaint);
 
-    canvas.drawRect(rect, paint);
-
-    if (heightProgress > 0.4) {
-      drawStars(canvas, rect, heightProgress);
+    if (heightProgress > 0.2) {
+      drawStars(canvas, heightProgress);
     }
   }
 
-  void drawStars(Canvas canvas, Rect rect, double intensity) {
-    final starPaint = Paint()..color = Colors.white.withOpacity(intensity);
+  void drawStars(Canvas canvas, double intensity) {
+    _starPaint.color = Colors.white.withOpacity(intensity);
 
-    for (int i = 0; i < 40; i++) {
-      final x = rect.left + random.nextDouble() * rect.width;
-      final y = rect.top + random.nextDouble() * rect.height;
-
-      canvas.drawCircle(Offset(x, y), random.nextDouble() * 2, starPaint);
+    for (final star in _stars) {
+      canvas.drawCircle(Offset(star.x, star.y), star.size, _starPaint);
     }
   }
 
   void spawnObstacle() {
     final worldWidth = size.x;
-    final visibleRect = camera.visibleWorldRect;
+    final worldHeight = size.y;
 
-    final visibleTop = visibleRect.top;
-    final visibleBottom = visibleRect.bottom;
+    final visibleTop = 0.0;
+    final visibleBottom = worldHeight;
 
     final obstacleCount = 2 + random.nextInt(3);
 
@@ -186,60 +225,63 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (isGameOver) {
-      restartGame();
-      return;
+    switch (_state) {
+      case GameState.playing:
+        player.jump(event.canvasPosition.x < size.x / 2 ? -1 : 1);
+        break;
+      case GameState.dying:
+        return;
+      case GameState.gameOver:
+        restartGame();
+        return;
     }
-
-    final tapX = event.canvasPosition.x;
-    final centerX = size.x / 2;
-    player.jump(tapX < centerX ? -1 : 1);
   }
 
   void gameOver() {
-    if (isGameOver) return;
-    isGameOver = true;
+    if (_state != GameState.playing) return;
+
+    _state = GameState.dying;
 
     if (score > highScore) {
       highScore = score;
       highScoreText.text = 'Best: ${highScore}s';
     }
 
-    camera.viewport.add(GameOverOverlay(size));
+    player.isVisible = false;
 
-    gameOver();
+    add(
+      RainbowExplosion(
+        explosionPosition: player.position.clone(),
+        gameSize: size,
+        onFinished: _showGameOverScreen,
+      ),
+    );
+  }
+
+  void _showGameOverScreen() {
+    _state = GameState.gameOver;
+    camera.viewport.add(GameOverOverlay(size));
   }
 
   void restartGame() {
+    _state = GameState.playing;
     survivalTime = 0;
     score = 0;
     spawnTimer = 0;
     spawnInterval = 1.5;
-    isGameOver = false;
 
     scoreText.text = '0s';
-    scoreText.textRenderer = TextPaint(
-      style: const TextStyle(
-        color: Colors.black,
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-      ),
-    );
+    scoreText.textRenderer = _blackScorePaint;
 
-    // Eliminar obstáculos
     children.whereType<Obstacle>().toList().forEach(
       (o) => o.removeFromParent(),
     );
 
-    // Eliminar overlay y texto del viewport
     camera.viewport.children.whereType<GameOverOverlay>().toList().forEach(
       (o) => o.removeFromParent(),
     );
 
-    gameOverText?.removeFromParent();
-    gameOverText = null;
-
-    // Resetear player
+    player.isVisible = true;
     player.position = Vector2(size.x / 2, size.y / 2);
     player.velocity = Vector2.zero();
   }
