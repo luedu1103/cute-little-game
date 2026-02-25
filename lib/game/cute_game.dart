@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:cute_game/game/components/star.dart';
+import 'package:cute_game/game/shared_preferences/score_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flame/camera.dart';
 import 'package:flame/components.dart';
@@ -12,98 +13,94 @@ import 'components/obstacle.dart';
 
 enum GameState { playing, dying, gameOver }
 
+const double _skyTransitionDuration = 60.0;
+const double _spawnIntervalMax = 1.5;
+const double _spawnIntervalMin = 0.5;
+const double _spawnDifficultyRate = 0.01;
+const int _maxObstaclesPerSpawn = 4;
+const double _playerFallLimit = 50.0;
+
+const Color _skyTopDay = Color(0xFF87CEEB);
+const Color _skyTopNight = Color(0xFF000014);
+const Color _skyBottomDay = Color(0xFFBFE9FF);
+const Color _skyBottomNight = Color(0xFF0B0C2A);
+const double _starsAppearAt = 0.2;
+const int _starCount = 60;
+
 class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
-  late Player player;
-  late TextComponent scoreText;
-  late TextComponent highScoreText;
+  // Componentes UI
+  late Player _player;
+  late TextComponent _scoreText;
+  late TextComponent _highScoreText;
 
-  final Random random = Random();
-
-  double spawnTimer = 0;
-  double spawnInterval = 1.5;
-
-  double survivalTime = 0;
-  int score = 0;
-  int highScore = 0;
-
+  // Estado del juego
   GameState _state = GameState.playing;
+  double _survivalTime = 0;
+  int _score = 0;
+  int _highScore = 0;
 
+  // Spawn de obstáculos
+  final Random _random = Random();
+  double _spawnTimer = 0;
+  double _spawnInterval = _spawnIntervalMax;
+
+  // Fondo
   late final Paint _backgroundPaint;
   late final Paint _starPaint;
-
   late final List<Star> _stars;
 
-  late final TextPaint _blackScorePaint;
-  late final TextPaint _whiteScorePaint;
+  // TextPaints — se recrean solo cuando cambia el color
+  late TextPaint _scorePaint;
+  late TextPaint _highScorePaint;
+  Color _lastTextColor = Colors.black;
+
+  final _scorePrefs = ScorePreferences.instance;
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   @override
   Future<void> onLoad() async {
+    _highScore = await _scorePrefs.loadHighScore();
+
     camera.viewport = MaxViewport();
 
-    player = Player(onGameOver: gameOver);
-    add(player);
+    _player = Player(onGameOver: _triggerGameOver);
+    add(_player);
 
-    _blackScorePaint = TextPaint(
-      style: const TextStyle(
-        color: Colors.black,
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-      ),
-    );
+    _scorePaint = _buildScorePaint(Colors.black);
+    _highScorePaint = _buildHighScorePaint(Colors.black);
 
-    _whiteScorePaint = TextPaint(
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-
-    scoreText = TextComponent(
+    _scoreText = TextComponent(
       text: '0s',
       position: Vector2(size.x / 2, size.y * 0.15),
       anchor: Anchor.center,
       priority: 100,
-      textRenderer: _blackScorePaint,
+      textRenderer: _scorePaint,
     );
 
-    add(scoreText);
-
-    highScoreText = TextComponent(
-      text: 'Best: 0s',
+    _highScoreText = TextComponent(
+      text: 'Best: ${_highScore}s',
       position: Vector2(size.x / 2, size.y * 0.22),
       anchor: Anchor.center,
       priority: 100,
-      textRenderer: TextPaint(
-        style: const TextStyle(
-          color: Colors.black,
-          fontSize: 20,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
+      textRenderer: _highScorePaint,
     );
 
-    add(highScoreText);
+    add(_scoreText);
+    add(_highScoreText);
 
-    // ---- Fondo optimizado ----
     _backgroundPaint = Paint();
+    _starPaint = Paint()..style = PaintingStyle.fill;
 
-    _starPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-
-    _stars = [];
-
-    for (int i = 0; i < 60; i++) {
-      _stars.add(
-        Star(
-          x: random.nextDouble() * size.x,
-          y: random.nextDouble() * size.y,
-          speed: 20 + random.nextDouble() * 60,
-          size: 1 + random.nextDouble() * 2,
-        ),
-      );
-    }
+    _stars = List.generate(
+      _starCount,
+      (_) => Star(
+        x: _random.nextDouble() * size.x,
+        y: _random.nextDouble() * size.y,
+        speed: 20 + _random.nextDouble() * 60,
+        size: 1 + _random.nextDouble() * 2,
+      ),
+    );
   }
 
   @override
@@ -111,147 +108,155 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     super.update(dt);
     if (_state == GameState.gameOver) return;
 
-    survivalTime += dt;
-    score = survivalTime.floor();
-    scoreText.text = '${score}s';
-
-    // Cambiar renderer sin recrearlo
-    scoreText.textRenderer = survivalTime > 40
-        ? _whiteScorePaint
-        : _blackScorePaint;
-
-    // Movimiento estrellas
-    for (final star in _stars) {
-      star.y += star.speed * dt;
-
-      if (star.y > size.y) {
-        star.y = 0;
-        star.x = random.nextDouble() * size.x;
-      }
-    }
-
-    spawnTimer += dt;
-
-    spawnInterval = (1.5 - survivalTime * 0.01).clamp(0.5, 1.5);
-
-    if (spawnTimer > spawnInterval) {
-      spawnObstacle();
-      spawnTimer = 0;
-    }
-
-    if (player.position.y > size.y + 50) {
-      gameOver();
-    }
+    _updateSurvivalTime(dt);
+    _updateTextColor();
+    _updateStars(dt);
+    _updateObstacleSpawn(dt);
+    _checkPlayerFell();
   }
 
   @override
   void render(Canvas canvas) {
-    drawDynamicBackground(canvas);
+    _drawBackground(canvas);
     super.render(canvas);
   }
 
-  void drawDynamicBackground(Canvas canvas) {
-    final gameSize = size;
+  // ── Update helpers ──────────────────────────────────────────────────────────
 
-    final heightProgress = (survivalTime / 60).clamp(0.0, 1.0);
+  void _updateSurvivalTime(double dt) {
+    _survivalTime += dt;
+    _score = _survivalTime.floor();
+    _scoreText.text = '${_score}s';
+  }
 
-    final topColor = Color.lerp(
-      const Color(0xFF87CEEB),
-      const Color(0xFF000014),
-      heightProgress,
-    )!;
+  void _updateTextColor() {
+    final progress = (_survivalTime / _skyTransitionDuration).clamp(0.0, 1.0);
+    final targetColor = Color.lerp(Colors.black, Colors.white, progress)!;
 
-    final bottomColor = Color.lerp(
-      const Color(0xFFBFE9FF),
-      const Color(0xFF0B0C2A),
-      heightProgress,
-    )!;
+    if (targetColor != _lastTextColor) {
+      _lastTextColor = targetColor;
+      _scorePaint = _buildScorePaint(targetColor);
+      _highScorePaint = _buildHighScorePaint(targetColor);
+      _scoreText.textRenderer = _scorePaint;
+      _highScoreText.textRenderer = _highScorePaint;
+    }
+  }
 
-    final rect = Rect.fromLTWH(0, 0, gameSize.x, gameSize.y);
+  void _updateStars(double dt) {
+    for (final star in _stars) {
+      star.y += star.speed * dt;
+      if (star.y > size.y) {
+        star.y = 0;
+        star.x = _random.nextDouble() * size.x;
+      }
+    }
+  }
+
+  void _updateObstacleSpawn(double dt) {
+    _spawnInterval = (_spawnIntervalMax - _survivalTime * _spawnDifficultyRate)
+        .clamp(_spawnIntervalMin, _spawnIntervalMax);
+
+    _spawnTimer += dt;
+    if (_spawnTimer >= _spawnInterval) {
+      _spawnObstacles();
+      _spawnTimer = 0;
+    }
+  }
+
+  void _checkPlayerFell() {
+    if (_player.position.y > size.y + _playerFallLimit) {
+      _triggerGameOver();
+    }
+  }
+
+  // ── Render helpers ──────────────────────────────────────────────────────────
+
+  void _drawBackground(Canvas canvas) {
+    final progress = (_survivalTime / _skyTransitionDuration).clamp(0.0, 1.0);
+    final rect = Rect.fromLTWH(0, 0, size.x, size.y);
 
     _backgroundPaint.shader = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      colors: [topColor, bottomColor],
+      colors: [
+        Color.lerp(_skyTopDay, _skyTopNight, progress)!,
+        Color.lerp(_skyBottomDay, _skyBottomNight, progress)!,
+      ],
     ).createShader(rect);
 
     canvas.drawRect(rect, _backgroundPaint);
 
-    if (heightProgress > 0.2) {
-      drawStars(canvas, heightProgress);
-    }
+    if (progress > _starsAppearAt) _drawStars(canvas, progress);
   }
 
-  void drawStars(Canvas canvas, double intensity) {
+  void _drawStars(Canvas canvas, double intensity) {
     _starPaint.color = Colors.white.withOpacity(intensity);
-
     for (final star in _stars) {
       canvas.drawCircle(Offset(star.x, star.y), star.size, _starPaint);
     }
   }
 
-  void spawnObstacle() {
-    final worldWidth = size.x;
-    final worldHeight = size.y;
+  // ── Spawn ───────────────────────────────────────────────────────────────────
 
-    final visibleTop = 0.0;
-    final visibleBottom = worldHeight;
+  void _spawnObstacles() {
+    final count = 2 + _random.nextInt(_maxObstaclesPerSpawn - 1);
 
-    final obstacleCount = 2 + random.nextInt(3);
-
-    for (int i = 0; i < obstacleCount; i++) {
-      final type = random.nextInt(3);
-
-      final randomY =
-          visibleTop + random.nextDouble() * (visibleBottom - visibleTop);
-
-      if (type == 0) {
-        add(Obstacle(position: Vector2(-60, randomY), moveLeft: false));
-      } else if (type == 1) {
-        add(
-          Obstacle(position: Vector2(worldWidth + 60, randomY), moveLeft: true),
-        );
-      } else {
-        add(
-          Obstacle(
-            position: Vector2(random.nextDouble() * worldWidth, visibleTop),
-            moveLeft: false,
-            falling: true,
-          ),
-        );
+    for (int i = 0; i < count; i++) {
+      switch (_random.nextInt(3)) {
+        case 0:
+          add(Obstacle(position: Vector2(-60, _randomY()), moveLeft: false));
+        case 1:
+          add(
+            Obstacle(
+              position: Vector2(size.x + 60, _randomY()),
+              moveLeft: true,
+            ),
+          );
+        case 2:
+          add(
+            Obstacle(
+              position: Vector2(_random.nextDouble() * size.x, 0),
+              moveLeft: false,
+              falling: true,
+            ),
+          );
       }
     }
   }
+
+  double _randomY() => _random.nextDouble() * size.y;
+
+  // ── Input ───────────────────────────────────────────────────────────────────
 
   @override
   void onTapDown(TapDownEvent event) {
     switch (_state) {
       case GameState.playing:
-        player.jump(event.canvasPosition.x < size.x / 2 ? -1 : 1);
-        break;
+        _player.jump(event.canvasPosition.x < size.x / 2 ? -1 : 1);
       case GameState.dying:
         return;
       case GameState.gameOver:
-        restartGame();
-        return;
+        _restartGame();
     }
   }
 
-  void gameOver() {
-    if (_state != GameState.playing) return;
+  // ── Estado del juego ────────────────────────────────────────────────────────
 
+  void _triggerGameOver() {
+    if (_state != GameState.playing) return;
     _state = GameState.dying;
 
-    if (score > highScore) {
-      highScore = score;
-      highScoreText.text = 'Best: ${highScore}s';
+    if (_score > _highScore) {
+      _highScore = _score;
+      _highScoreText.text = 'Best: ${_highScore}s';
+      _scorePrefs.saveHighScore(_highScore);
     }
 
-    player.isVisible = false;
+    _player.isVisible = false;
 
     add(
       RainbowExplosion(
-        explosionPosition: player.position.clone(),
+        explosionPosition: _player.position.clone(),
         gameSize: size,
         onFinished: _showGameOverScreen,
       ),
@@ -263,26 +268,42 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     camera.viewport.add(GameOverOverlay(size));
   }
 
-  void restartGame() {
+  void _restartGame() {
     _state = GameState.playing;
-    survivalTime = 0;
-    score = 0;
-    spawnTimer = 0;
-    spawnInterval = 1.5;
+    _survivalTime = 0;
+    _score = 0;
+    _spawnTimer = 0;
+    _spawnInterval = _spawnIntervalMax;
+    _lastTextColor = Colors.black;
 
-    scoreText.text = '0s';
-    scoreText.textRenderer = _blackScorePaint;
+    _scorePaint = _buildScorePaint(Colors.black);
+    _highScorePaint = _buildHighScorePaint(Colors.black);
+
+    _scoreText
+      ..text = '0s'
+      ..textRenderer = _scorePaint;
+    _highScoreText.textRenderer = _highScorePaint;
 
     children.whereType<Obstacle>().toList().forEach(
       (o) => o.removeFromParent(),
     );
-
     camera.viewport.children.whereType<GameOverOverlay>().toList().forEach(
       (o) => o.removeFromParent(),
     );
 
-    player.isVisible = true;
-    player.position = Vector2(size.x / 2, size.y / 2);
-    player.velocity = Vector2.zero();
+    _player
+      ..isVisible = true
+      ..position = Vector2(size.x / 2, size.y / 2)
+      ..velocity = Vector2.zero();
   }
+
+  // ── Factories de TextPaint ──────────────────────────────────────────────────
+
+  static TextPaint _buildScorePaint(Color color) => TextPaint(
+    style: TextStyle(color: color, fontSize: 32, fontWeight: FontWeight.bold),
+  );
+
+  static TextPaint _buildHighScorePaint(Color color) => TextPaint(
+    style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w500),
+  );
 }
