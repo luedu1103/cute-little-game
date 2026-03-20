@@ -1,12 +1,13 @@
 import 'dart:math';
 import 'package:cute_game/game/components/star.dart';
+import 'package:cute_game/game/repositories/player_repository.dart';
+import 'package:cute_game/game/shared_preferences/player_preferences.dart';
 import 'package:cute_game/game/shared_preferences/score_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flame/camera.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
-import 'package:cute_game/game/ui/game_over.dart';
 import 'package:cute_game/game/ui/rainbaw_explosion.dart';
 import 'components/player.dart';
 import 'components/obstacle.dart';
@@ -56,6 +57,12 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
   final _scorePrefs = ScorePreferences.instance;
 
+  String nickname = 'Player';
+
+  // Public
+  int get score => _score;
+  void restartGame() => _restartGame();
+
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   @override
@@ -101,6 +108,8 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
         size: 1 + _random.nextDouble() * 2,
       ),
     );
+
+    pauseEngine();
   }
 
   @override
@@ -234,7 +243,7 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
       case GameState.playing:
         _player.jump(event.canvasPosition.x < size.x / 2 ? -1 : 1);
       case GameState.dying:
-        return;
+        _skipExplosion();
       case GameState.gameOver:
         _restartGame();
     }
@@ -242,7 +251,20 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
   // ── Estado del juego ────────────────────────────────────────────────────────
 
-  void _triggerGameOver() {
+  void startGame(String nick) {
+    nickname = nick;
+    overlays.remove('startMenu');
+    resumeEngine();
+  }
+
+  void _skipExplosion() {
+    children.whereType<RainbowExplosion>().toList().forEach(
+      (e) => e.removeFromParent(),
+    );
+    _restartGame();
+  }
+
+  void _triggerGameOver() async {
     if (_state != GameState.playing) return;
     _state = GameState.dying;
 
@@ -250,6 +272,9 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
       _highScore = _score;
       _highScoreText.text = 'Best: ${_highScore}s';
       _scorePrefs.saveHighScore(_highScore);
+
+      final uuid = await PlayerPreferences.instance.getOrCreateUuid();
+      PlayerRepository.instance.updateHighScore(uuid, _highScore);
     }
 
     _player.isVisible = false;
@@ -265,7 +290,7 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
   void _showGameOverScreen() {
     _state = GameState.gameOver;
-    camera.viewport.add(GameOverOverlay(size));
+    overlays.add('gameOver');
   }
 
   void _restartGame() {
@@ -287,9 +312,7 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     children.whereType<Obstacle>().toList().forEach(
       (o) => o.removeFromParent(),
     );
-    camera.viewport.children.whereType<GameOverOverlay>().toList().forEach(
-      (o) => o.removeFromParent(),
-    );
+    overlays.remove('gameOver');
 
     _player
       ..isVisible = true
