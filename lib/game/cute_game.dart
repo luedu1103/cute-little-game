@@ -261,7 +261,8 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     children.whereType<RainbowExplosion>().toList().forEach(
       (e) => e.removeFromParent(),
     );
-    _restartGame();
+    _state = GameState.gameOver;
+    overlays.add('gameOver');
   }
 
   void _triggerGameOver() async {
