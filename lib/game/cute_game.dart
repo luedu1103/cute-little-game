@@ -115,7 +115,7 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   @override
   void update(double dt) {
     super.update(dt);
-    if (_state == GameState.gameOver) return;
+    if (_state != GameState.playing) return;
 
     _updateSurvivalTime(dt);
     _updateTextColor();
@@ -273,8 +273,16 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
       _highScoreText.text = 'Best: ${_highScore}s';
       _scorePrefs.saveHighScore(_highScore);
 
-      final uuid = await PlayerPreferences.instance.getOrCreateUuid();
-      PlayerRepository.instance.updateHighScore(uuid, _highScore);
+      try {
+        final uuid = await PlayerPreferences.instance.getOrCreateUuid().timeout(
+          Duration(seconds: 4),
+        );
+        PlayerRepository.instance
+            .updateHighScore(uuid, _highScore)
+            .timeout(Duration(seconds: 4));
+      } catch (_) {
+        // nothing ever happens
+      }
     }
 
     _player.isVisible = false;

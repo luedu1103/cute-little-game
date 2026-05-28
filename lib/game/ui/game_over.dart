@@ -1,6 +1,7 @@
 import 'package:cute_game/game/cute_game.dart';
 import 'package:cute_game/game/repositories/player_repository.dart';
 import 'package:cute_game/game/shared_preferences/player_preferences.dart';
+import 'package:cute_game/game/ui/widgets/loading_overlay.dart';
 import 'package:flutter/material.dart';
 
 class GameOverScreen extends StatefulWidget {
@@ -17,15 +18,33 @@ class _GameOverScreenState extends State<GameOverScreen> {
   List<Map<String, dynamic>> _topPlayers = [];
   Map<String, dynamic>? _myEntry;
   bool _loading = false;
+  String _currentUuid = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initUuid();
+  }
+
+  Future<void> _initUuid() async {
+    _currentUuid = await PlayerPreferences.instance.getOrCreateUuid();
+  }
 
   Future<void> _loadLeaderboard() async {
     setState(() => _loading = true);
 
-    final uuid = await PlayerPreferences.instance.getOrCreateUuid();
-    final top100 = await PlayerRepository.instance.getTop100();
-    final myScore = await PlayerRepository.instance.getPlayerEntry(uuid);
+    if (_currentUuid.isEmpty) {
+      _currentUuid = await PlayerPreferences.instance.getOrCreateUuid();
+    }
 
-    final inTop = top100.any((p) => p['uuid'] == uuid);
+    final top100 = await PlayerRepository.instance.getTop100();
+    final myScore = await PlayerRepository.instance.getPlayerEntry(
+      _currentUuid,
+    );
+
+    final match = top100.where((p) => p['uuid'] == _currentUuid).toList();
+
+    final inTop = match.isNotEmpty;
 
     setState(() {
       _topPlayers = top100;
@@ -46,52 +65,60 @@ class _GameOverScreenState extends State<GameOverScreen> {
   }
 
   Widget _buildGameOver() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'GAME OVER',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 48,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '${widget.game.score}s',
-            style: const TextStyle(
-              color: Colors.pinkAccent,
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 40),
-          ElevatedButton(
-            onPressed: () => widget.game.restartGame(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.pinkAccent,
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+    return Stack(
+      children: [
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'GAME OVER',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            child: const Text(
-              'JUGAR DE NUEVO',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
+              const SizedBox(height: 16),
+              Text(
+                '${widget.game.score}s',
+                style: const TextStyle(
+                  color: Colors.pinkAccent,
+                  fontSize: 36,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 40),
+              ElevatedButton(
+                onPressed: () => widget.game.restartGame(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.pinkAccent,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 48,
+                    vertical: 16,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'JUGAR DE NUEVO',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: _loadLeaderboard,
+                child: const Text(
+                  'Ver Leaderboard',
+                  style: TextStyle(color: Colors.white70, fontSize: 18),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: _loadLeaderboard,
-            child: const Text(
-              'Ver Leaderboard',
-              style: TextStyle(color: Colors.white70, fontSize: 18),
-            ),
-          ),
-        ],
-      ),
+        ),
+        if (_loading) const LoadingOverlay(message: 'Cargando ranking...'),
+      ],
     );
   }
 
@@ -107,12 +134,9 @@ class _GameOverScreenState extends State<GameOverScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 16),
         Expanded(
           child: _loading
-              ? const Center(
-                  child: CircularProgressIndicator(color: Colors.pinkAccent),
-                )
+              ? const LoadingOverlay(message: 'Cargando ranking...')
               : ListView.builder(
                   itemCount: _topPlayers.length + (_myEntry != null ? 2 : 0),
                   itemBuilder: (context, index) {
@@ -124,7 +148,8 @@ class _GameOverScreenState extends State<GameOverScreen> {
                     }
 
                     final player = _topPlayers[index];
-                    return _buildEntry(player, index + 1);
+                    final isMe = player['uuid'] == _currentUuid;
+                    return _buildEntry(player, index + 1, isMe: isMe);
                   },
                 ),
         ),

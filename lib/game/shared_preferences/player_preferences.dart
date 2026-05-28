@@ -7,6 +7,7 @@ class PlayerPreferences {
 
   static const _keyNickname = 'player_nickname';
   static const _keyUuid = 'player_uuid';
+  static const _keyNicknameSynced = 'player_nickname_synced';
 
   Future<String> getOrCreateUuid() async {
     final prefs = await SharedPreferences.getInstance();
@@ -16,6 +17,16 @@ class PlayerPreferences {
       await prefs.setString(_keyUuid, uuid);
     }
     return uuid;
+  }
+
+  Future<bool> isNicknameSynced() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyNicknameSynced) ?? false;
+  }
+
+  Future<void> setNicknameSynced(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyNicknameSynced, value);
   }
 
   Future<String> loadPlayerNickname() async {

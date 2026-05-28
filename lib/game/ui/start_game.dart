@@ -1,5 +1,6 @@
 import 'package:cute_game/game/repositories/player_repository.dart';
 import 'package:cute_game/game/shared_preferences/player_preferences.dart';
+import 'package:cute_game/game/ui/widgets/loading_overlay.dart';
 import 'package:flutter/material.dart';
 
 class StartMenuOverlay extends StatefulWidget {
@@ -31,6 +32,32 @@ class _StartMenuOverlayState extends State<StartMenuOverlay> {
     final saved = await playerPreferences.loadPlayerNickname();
     if (saved.isNotEmpty) {
       setState(() => _controller.text = saved);
+
+      final synced = await playerPreferences.isNicknameSynced();
+      if (!synced) {
+        await _revalidateNickname(saved);
+      }
+    }
+  }
+
+  Future<void> _revalidateNickname(String nick) async {
+    try {
+      final taken = await PlayerRepository.instance
+          .nicknameExists(nick, _currentUuid)
+          .timeout(const Duration(seconds: 4));
+
+      if (taken) {
+        await playerPreferences.savePlayerNickname('');
+        setState(() {
+          _controller.text = '';
+          _errorText = 'Tu nickname "$nick" ya fue tomado. Elige otro.';
+        });
+      } else {
+        await PlayerRepository.instance.savePlayer(_currentUuid, nick);
+        await playerPreferences.setNicknameSynced(true);
+      }
+    } catch (_) {
+      // nothing ever happens
     }
   }
 
@@ -43,27 +70,29 @@ class _StartMenuOverlayState extends State<StartMenuOverlay> {
       _errorText = null;
     });
 
-    final exists = await PlayerRepository.instance.nicknameExists(
-      nick,
-      _currentUuid,
-    );
+    try {
+      final exists = await PlayerRepository.instance.nicknameExists(
+        nick,
+        _currentUuid,
+      );
 
-    if (exists) {
-      setState(() {
-        _isLoading = false;
-        _errorText = 'Ese nickname ya está en uso';
-      });
-      return;
+      if (exists) {
+        setState(() {
+          _isLoading = false;
+          _errorText = 'Ese nickname ya está en uso';
+        });
+        return;
+      }
+
+      await playerPreferences.savePlayerNickname(nick);
+    } catch (_) {
+      // nothing ever happens
     }
-
-    await playerPreferences.savePlayerNickname(nick);
     await PlayerRepository.instance.savePlayer(_currentUuid, nick);
-
     widget.onStart(nick);
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildMenuContent() {
     return Scaffold(
       backgroundColor: Colors.black.withOpacity(0.6),
       body: Center(
@@ -130,6 +159,16 @@ class _StartMenuOverlayState extends State<StartMenuOverlay> {
           ],
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        _buildMenuContent(),
+        if (_isLoading) const LoadingOverlay(message: ''),
+      ],
     );
   }
 }
