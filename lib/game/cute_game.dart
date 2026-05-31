@@ -258,9 +258,6 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   }
 
   void _skipExplosion() {
-    children.whereType<RainbowExplosion>().toList().forEach(
-      (e) => e.removeFromParent(),
-    );
     _state = GameState.gameOver;
     overlays.add('gameOver');
   }
@@ -292,7 +289,11 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
       RainbowExplosion(
         explosionPosition: _player.position.clone(),
         gameSize: size,
-        onFinished: _showGameOverScreen,
+        onFinished: () {
+          if (_state == GameState.dying) {
+            _showGameOverScreen();
+          }
+        },
       ),
     );
   }
@@ -320,6 +321,9 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
     children.whereType<Obstacle>().toList().forEach(
       (o) => o.removeFromParent(),
+    );
+    children.whereType<RainbowExplosion>().toList().forEach(
+      (e) => e.removeFromParent(),
     );
     overlays.remove('gameOver');
 
