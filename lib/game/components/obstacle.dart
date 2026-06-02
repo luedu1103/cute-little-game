@@ -15,21 +15,23 @@ class Obstacle extends PositionComponent with CollisionCallbacks {
     this.falling = false,
   }) {
     this.position = position;
-    size = falling ? Vector2(50, 50) : Vector2(70, 70);
+    size = falling ? Vector2(45, 90) : Vector2(70, 70);
     anchor = Anchor.center;
   }
 
   @override
   Future<void> onLoad() async {
-    final spriteName = falling ? 'meteorite-Sheet.png' : 'redDragon-Sheet.png';
+    final spriteName = falling
+        ? 'new-meteorite-Sheet.png'
+        : 'redDragon-Sheet.png';
     final image = await Flame.images.load(spriteName);
 
     final animation = SpriteAnimation.fromFrameData(
       image,
       SpriteAnimationData.sequenced(
-        amount: 8,
+        amount: falling ? 4 : 8,
         stepTime: 0.1,
-        textureSize: Vector2(32, 32),
+        textureSize: falling ? Vector2(32, 64) : Vector2(32, 32),
       ),
     );
 
