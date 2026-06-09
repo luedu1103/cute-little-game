@@ -21,6 +21,7 @@ class Obstacle extends PositionComponent with CollisionCallbacks {
 
   @override
   Future<void> onLoad() async {
+    debugMode = false;
     final spriteName = falling
         ? 'new-meteorite-Sheet.png'
         : 'redDragon-Sheet.png';

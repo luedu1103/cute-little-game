@@ -67,11 +67,15 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
   @override
   Future<void> onLoad() async {
+    debugMode = false;
     _highScore = await _scorePrefs.loadHighScore();
 
     camera.viewport = MaxViewport();
 
-    _player = Player(onGameOver: _triggerGameOver);
+    _player = Player(
+      onGameOver: _triggerGameOver,
+      onDeathSpinComplete: _triggerExplosion,
+    );
     add(_player);
 
     _scorePaint = _buildScorePaint(Colors.black);
@@ -273,18 +277,18 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
 
       try {
         final uuid = await PlayerPreferences.instance.getOrCreateUuid().timeout(
-          Duration(seconds: 4),
+          const Duration(seconds: 4),
         );
         PlayerRepository.instance
             .updateHighScore(uuid, _highScore)
-            .timeout(Duration(seconds: 4));
-      } catch (_) {
-        // nothing ever happens
-      }
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
 
-    _player.isVisible = false;
+    _player.triggerDeathSpin();
+  }
 
+  void _triggerExplosion() {
     add(
       RainbowExplosion(
         explosionPosition: _player.position.clone(),
@@ -330,7 +334,8 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     _player
       ..isVisible = true
       ..position = Vector2(size.x / 2, size.y / 2)
-      ..velocity = Vector2.zero();
+      ..velocity = Vector2.zero()
+      ..reset();
   }
 
   // ── Factories de TextPaint ──────────────────────────────────────────────────
