@@ -71,10 +71,9 @@ class _StartMenuOverlayState extends State<StartMenuOverlay> {
     });
 
     try {
-      final exists = await PlayerRepository.instance.nicknameExists(
-        nick,
-        _currentUuid,
-      );
+      final exists = await PlayerRepository.instance
+          .nicknameExists(nick, _currentUuid)
+          .timeout(const Duration(seconds: 4));
 
       if (exists) {
         setState(() {
@@ -84,11 +83,15 @@ class _StartMenuOverlayState extends State<StartMenuOverlay> {
         return;
       }
 
-      await playerPreferences.savePlayerNickname(nick);
+      await PlayerRepository.instance
+          .savePlayer(_currentUuid, nick)
+          .timeout(const Duration(seconds: 4));
+
+      await playerPreferences.setNicknameSynced(true);
     } catch (_) {
       // nothing ever happens
     }
-    await PlayerRepository.instance.savePlayer(_currentUuid, nick);
+    await playerPreferences.savePlayerNickname(nick);
     widget.onStart(nick);
   }
 

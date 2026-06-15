@@ -24,7 +24,7 @@ class RainbowExplosion extends PositionComponent {
     final image = await Flame.images.load('explosion-Sheet.png');
 
     const frameCount = 9;
-    const stepTime = 0.08;
+    const stepTime = 0.10;
 
     final animation = SpriteAnimation.fromFrameData(
       image,

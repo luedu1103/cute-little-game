@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:cute_game/game/components/cloud.dart';
 import 'package:cute_game/game/components/star.dart';
 import 'package:cute_game/game/repositories/player_repository.dart';
 import 'package:cute_game/game/shared_preferences/player_preferences.dart';
@@ -28,6 +29,17 @@ const Color _skyBottomNight = Color(0xFF0B0C2A);
 const double _starsAppearAt = 0.2;
 const int _starCount = 60;
 
+const double _cloudsStopAt = 35.0;
+const double _cloudSpawnIntervalMin = 4.0;
+const double _cloudSpawnIntervalMax = 8.0;
+
+const List<String> _cloudAssets = [
+  'cloud/cloud-uwu.png',
+  'cloud/cloud-uvu.png',
+  'cloud/cloud-owo.png',
+  'cloud/cloud--_-.png',
+];
+
 class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   // Componentes UI
   late Player _player;
@@ -44,6 +56,10 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
   final Random _random = Random();
   double _spawnTimer = 0;
   double _spawnInterval = _spawnIntervalMax;
+
+  // Spawn de nubes
+  double _cloudSpawnTimer = 0;
+  double _cloudSpawnInterval = _cloudSpawnIntervalMin;
 
   // Fondo
   late final Paint _backgroundPaint;
@@ -125,6 +141,7 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     _updateTextColor();
     _updateStars(dt);
     _updateObstacleSpawn(dt);
+    _updateCloudSpawn(dt);
     _checkPlayerFell();
   }
 
@@ -237,6 +254,43 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     }
   }
 
+  void _updateCloudSpawn(double dt) {
+    if (_survivalTime > _cloudsStopAt) return;
+
+    _cloudSpawnTimer += dt;
+    if (_cloudSpawnTimer >= _cloudSpawnInterval) {
+      _spawnCloud();
+      _cloudSpawnTimer = 0;
+      _cloudSpawnInterval =
+          _cloudSpawnIntervalMin +
+          _random.nextDouble() *
+              (_cloudSpawnIntervalMax - _cloudSpawnIntervalMin);
+    }
+  }
+
+  void _spawnCloud() {
+    final asset = _cloudAssets[_random.nextInt(_cloudAssets.length)];
+
+    final scale = 2.0 + _random.nextDouble() * 3.0; // 2x a 5x → 64px-160px
+    final cloudSize = Vector2.all(32 * scale);
+
+    final speed = 15 + _random.nextDouble() * 15; // 15-30 px/s
+
+    final goingRight = _random.nextBool();
+
+    final startX = goingRight ? -cloudSize.x : size.x + cloudSize.x;
+    final direction = goingRight ? 1 : -1;
+
+    add(
+      CloudComponent(
+        position: Vector2(startX, _random.nextDouble() * size.y),
+        size: cloudSize,
+        speed: speed * direction,
+        spriteName: asset,
+      ),
+    );
+  }
+
   double _randomY() => _random.nextDouble() * size.y;
 
   // ── Input ───────────────────────────────────────────────────────────────────
@@ -314,6 +368,13 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     _spawnTimer = 0;
     _spawnInterval = _spawnIntervalMax;
     _lastTextColor = Colors.black;
+
+    _cloudSpawnTimer = 0;
+    _cloudSpawnInterval = _cloudSpawnIntervalMin;
+
+    children.whereType<CloudComponent>().toList().forEach(
+      (c) => c.removeFromParent(),
+    );
 
     _scorePaint = _buildScorePaint(Colors.black);
     _highScorePaint = _buildHighScorePaint(Colors.black);
