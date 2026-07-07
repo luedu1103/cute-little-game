@@ -274,8 +274,9 @@ class CuteGame extends FlameGame with HasCollisionDetection, TapCallbacks {
     final scale = 2.0 + _random.nextDouble() * 3.0; // 2x a 5x → 64px-160px
     final cloudSize = Vector2.all(32 * scale);
 
-    final speed = 15 + _random.nextDouble() * 15; // 15-30 px/s
+    final speed = 10 + 40 / scale; // 18-30 px/s
 
+    print(speed);
     final goingRight = _random.nextBool();
 
     final startX = goingRight ? -cloudSize.x : size.x + cloudSize.x;

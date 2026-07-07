@@ -1,4 +1,5 @@
 import 'package:flame/components.dart';
+import 'package:flutter/material.dart'; 
 
 class CloudComponent extends PositionComponent {
   final double speed;
@@ -17,10 +18,21 @@ class CloudComponent extends PositionComponent {
   }
 
   @override
-  Future<void> onLoad() async {
-    final sprite = await Sprite.load(spriteName);
-    add(SpriteComponent(sprite: sprite, size: size));
-  }
+Future<void> onLoad() async {
+  final sprite = await Sprite.load(spriteName);
+
+  final spriteComponent = SpriteComponent(
+    sprite: sprite,
+    size: size,
+    paint: Paint()
+        ..colorFilter = ColorFilter.mode(
+            const Color(0xFFBFE9FF).withOpacity(0.5), // tinte cielo
+            BlendMode.srcATop,
+        ),
+    );
+
+  add(spriteComponent);
+}
 
   @override
   void update(double dt) {
